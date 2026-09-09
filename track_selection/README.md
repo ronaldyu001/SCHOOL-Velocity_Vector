@@ -1,118 +1,112 @@
-## Converting npy track file into vector (svg) file
+# Track selection
 
-### Basic usage
+Convert DeepRacer `.npy` tracks into printable SVGs, and score every track by how
+much of its original size survives being fitted to the room.
 
-Install NumPy if needed:
+---
+
+## 0. Prerequisites
+
+From the repository root, create a virtual environment and install the pinned
+dependencies:
 
 ```bash
-pip install numpy
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
+
+Then work from this folder:
+
+```bash
+cd track_selection
+```
+
+---
+
+## 1. Single convert
+
+`converters/deepracer_track_converter_v4.py` converts one track.
 
 Inspect a track without generating anything:
 
 ```bash
-python deepracer_track_converter.py \
-    2024_reinvent_champ_cw.npy \
-    --inspect-only
+python converters/deepracer_track_converter_v4.py track-data/2024_reinvent_champ_cw.npy --inspect-only
 ```
 
-Generate the default SVG:
+Generate the SVG (defaults to `<input>.svg`, or use `--output`):
 
 ```bash
-python deepracer_track_converter.py \
-    2024_reinvent_champ_cw.npy
+python converters/deepracer_track_converter_v4.py track-data/2024_reinvent_champ_cw.npy --output svg_tracks/champ_cw.svg
 ```
 
-That automatically produces:
-
-```text
-2024_reinvent_champ_cw.svg
-```
-
-Or choose the output filename:
+Fit the track to a room, which is what produces the scale percentage:
 
 ```bash
-python deepracer_track_converter.py \
-    2024_reinvent_champ_cw.npy \
-    --output reinvention_track.svg
+python converters/deepracer_track_converter_v4.py track-data/reinvent_base.npy \
+    --fit-room-width 20 --fit-room-height 24 --room-units ft --rotate-to-fit
 ```
 
 ### Useful options
 
-Change the surrounding margin:
+| Option | Purpose |
+| --- | --- |
+| `--margin 0.75` | Surrounding margin in meters |
+| `--start-index 12` | Change the start waypoint |
+| `--simple-start-line` | Plain white start line instead of checkered |
+| `--no-centerline` / `--no-start-line` | Drop those elements |
+| `--boundary-width` / `--center-width` / `--start-line-width` | Physical line widths in meters |
+| `--dash 0.20 --gap 0.20` | Dashed centerline spacing |
+| `--field-color` / `--road-color` / `--boundary-color` / `--center-color` | Colors, e.g. `"#00A98F"` |
+| `--minimum-track-width 24` | Narrowest acceptable scaled lane (inches); export stops below it unless `--force-scale` |
+| `--preview out.png` | PNG preview (needs matplotlib) |
+| `--panel-width 1.2192 --production-mode` | Split into printable panels with alignment marks |
 
-```bash
---margin 0.75
-```
+### Printing
 
-Change the start waypoint:
-
-```bash
---start-index 12
-```
-
-Use a plain white start line rather than the checker-style version:
-
-```bash
---simple-start-line
-```
-
-Remove the centerline:
-
-```bash
---no-centerline
-```
-
-Remove the start line:
-
-```bash
---no-start-line
-```
-
-Control physical line widths:
-
-```bash
---boundary-width 0.05 \
---center-width 0.04 \
---start-line-width 0.10
-```
-
-Control the dashed centerline:
-
-```bash
---dash 0.20 \
---gap 0.20
-```
-
-You can also change colors, for example:
-
-```bash
-python deepracer_track_converter.py track.npy \
-    --output track.svg \
-    --field-color "#00A98F" \
-    --road-color "#333F48" \
-    --boundary-color "#FFFFFF" \
-    --center-color "#F5A800"
-```
-
-### Most important printing detail
-
-The utility writes real physical dimensions into the SVG. For example, the SVG generated from your uploaded track contains a physical page size corresponding to about:
-
-```text
-11.817 m × 5.156 m
-```
-
-So your print-shop instruction should be:
+The SVG carries real physical dimensions, so:
 
 > **Print at 100% / Actual Size. Do not use Fit to Page, Scale to Media, or automatic resizing.**
 
-The next enhancement I would recommend is adding a `--preview` option and a **multi-panel export mode**, e.g.:
+---
+
+## 2. Batch convert
+
+`converters/run_batch_convert.py` runs the converter over every track in `track-data/`,
+writes the SVGs to `svg_tracks/`, and records the results in
+`batch_converter_results.csv`.
 
 ```bash
-python deepracer_track_converter.py track.npy \
-    --panels 4 \
-    --panel-overlap 0.05
+python converters/run_batch_convert.py
 ```
 
-That would divide a 30–40 ft track into manageable printable strips with alignment marks, which may be much more practical for your CU Denver large-format printer.
+Defaults: a **20 x 24 ft** room, 90-degree rotation allowed, and a **>= 80%**
+of-original-size threshold for a track to count as a candidate.
+
+```bash
+python converters/run_batch_convert.py --room-width 30 --room-height 40 --threshold 85 --no-rotate
+```
+
+Other flags: `--room-units`, `--room-clearance`, `--margin`,
+`--minimum-track-width`, `--track-dir`, `--svg-dir`, `--results-csv`.
+
+### The CSV
+
+Rows are sorted best-scale-first. `percent_of_original_size` is the driver;
+the four gate columns say whether a track is actually usable.
+
+| Column | Gate |
+| --- | --- |
+| `meets_size_threshold` | Scale >= `--threshold` (our selection rule) |
+| `meets_min_track_width` | Scaled lane >= 24 in — the converter refuses to export below this |
+| `track_data_valid` | `.npy` shape, waypoint count, no NaN/inf |
+| `room_fit_valid` | Room and clearance leave usable floor |
+
+Plus `status`, `error_message`, `svg_written`, and the supporting numbers
+(lane widths, `rotated_90`, fitted dimensions, centerline length, waypoints,
+`svg_path`).
+
+Tracks that fail a gate are recorded in the CSV but produce no SVG.
+
+Note: the scale factor is not capped at 1.0, so a value above 100% means the
+track is smaller than the room and was scaled *up*.

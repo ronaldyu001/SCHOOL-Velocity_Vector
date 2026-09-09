@@ -1,0 +1,12 @@
+# Top-level dependencies. Compile with:
+#   pip-compile requirements.in
+# Install the pinned result with:
+#   pip-sync requirements.txt   (or: pip install -r requirements.txt)
+
+# Track geometry: loading .npy waypoint arrays, scaling, room fitting.
+numpy
+
+# Optional: only needed for the converter's --preview PNG export
+# (deepracer_track_converter_v4.write_preview_png). The SVG and batch
+# pipelines do not import it.
+matplotlib
